@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 
-const PORT = 1234;
+const PORT = process.env.PORT || 1234;
 const MAX_ITEMS = 1_000_000;
 
 const app = express();
