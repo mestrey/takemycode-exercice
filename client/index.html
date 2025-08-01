@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Тестовое задание от Йована</title>
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      #app {
+        padding: 0px 2rem;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      #scroll-container {
+        border: 2px solid #ccc;
+        height: 500px;
+        overflow-y: scroll;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      tr.draggable {
+        cursor: move;
+      }
+      #search {
+        margin-bottom: 10px;
+        padding: 5px;
+        width: 100%;
+        max-width: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <input type="text" id="search" placeholder="Фильтр" />
+      <div id="scroll-container">
+        <table id="list">
+          <thead>
+            <tr>
+              <th>Выбрать</th>
+              <th>Значение</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <script>
+      const searchInput = document.getElementById("search");
+      const scrollContainer = document.getElementById("scroll-container");
+      const tableBody = document.querySelector("#list tbody");
+
+      let currentOffset = 0;
+      let isLoading = false;
+      let hasMore = true;
+      let searchQuery = "";
+
+      function debounce(func, delay) {
+        let timeout;
+
+        return function (...args) {
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(this, args), delay);
+        };
+      }
+
+      function fetchMoreItems() {
+        if (isLoading || !hasMore) {
+          return;
+        }
+
+        isLoading = true;
+
+        fetch(
+          `/items?offset=${currentOffset}&limit=20${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ""}`
+        )
+          .then((response) => response.json())
+          .then((items) => {
+            appendItems(items);
+            currentOffset += items.length;
+
+            if (items.length < 20) {
+              hasMore = false;
+            }
+
+            isLoading = false;
+          })
+          .catch((error) => {
+            console.error("Ошибка получения данных:", error);
+            isLoading = false;
+          });
+      }
+
+      function appendItems(items) {
+        items.forEach((item) => {
+          const tr = document.createElement("tr");
+          tr.draggable = true;
+          tr.dataset.id = item.id;
+          tr.classList.add("draggable");
+
+          const selectTd = document.createElement("td");
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = item.selected;
+          selectTd.appendChild(checkbox);
+
+          checkbox.addEventListener("change", () => {
+            fetch("/select", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ itemId: item.id, selected: checkbox.checked }),
+            })
+              .then((response) => response.json())
+              .then((data) => {
+                if (!data.success) {
+                  console.error("Сорри, не удалось обновить выбор :(");
+                  checkbox.checked = !checkbox.checked;
+                }
+              })
+              .catch((error) => {
+                console.error("Упс, ошибка обновления:", error);
+                checkbox.checked = !checkbox.checked;
+              });
+          });
+
+          const numberTd = document.createElement("td");
+          numberTd.textContent = item.id;
+
+          tr.appendChild(selectTd);
+          tr.appendChild(numberTd);
+
+          tr.addEventListener("dragstart", (event) => {
+            event.dataTransfer.setData("text/plain", item.id);
+          });
+
+          tr.addEventListener("dragover", (event) => {
+            event.preventDefault();
+          });
+
+          tr.addEventListener("drop", (event) => {
+            event.preventDefault();
+
+            const fromId = event.dataTransfer.getData("text/plain");
+            const toId = tr.dataset.id;
+
+            if (fromId === toId) {
+              return;
+            }
+
+            fetch("/move-item", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fromId: parseInt(fromId), toId: parseInt(toId) }),
+            })
+              .then((response) => response.json())
+              .then((data) => {
+                if (data.success) {
+                  clearList();
+
+                  currentOffset = 0;
+                  hasMore = true;
+
+                  fetchMoreItems();
+                } else {
+                  console.error("Что то пошло не так при перемещении");
+                }
+              })
+              .catch((error) => {
+                console.error("Упс, ошибка перемещения:", error);
+              });
+          });
+
+          tableBody.appendChild(tr);
+        });
+      }
+
+      function clearList() {
+        tableBody.innerHTML = "";
+      }
+
+      searchInput.addEventListener(
+        "input",
+        debounce(() => {
+          searchQuery = searchInput.value;
+          clearList();
+
+          currentOffset = 0;
+          hasMore = true;
+
+          fetchMoreItems();
+        }, 300)
+      );
+
+      scrollContainer.addEventListener("scroll", () => {
+        if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 100) {
+          fetchMoreItems();
+        }
+      });
+
+      fetchMoreItems();
+    </script>
+  </body>
+</html>
